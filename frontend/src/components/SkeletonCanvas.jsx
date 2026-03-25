@@ -7,31 +7,57 @@ import {
 
 import { drawSkeleton } from "../utils/drawSkeleton";
 
-export default function SkeletonCanvas() {
+// BODY PART MAP
+const BODY_PART_MAP = {
+  knee_right: [24, 26, 28],
+  knee_left: [23, 25, 27],
+  elbow_right: [12, 14, 16],
+  elbow_left: [11, 13, 15],
+  shoulder_right: [14, 12, 24],
+  shoulder_left: [13, 11, 23]
+};
+
+function calculateAngle(a, b, c) {
+  const radians =
+    Math.atan2(c.y - b.y, c.x - b.x) -
+    Math.atan2(a.y - b.y, a.x - b.x);
+
+  let angle = Math.abs((radians * 180.0) / Math.PI);
+  if (angle > 180) angle = 360 - angle;
+
+  return angle;
+}
+
+export default function SkeletonCanvas({
+  currentStepId,
+  requiredParts,
+  onAngleUpdate,
+  onAccuracyUpdate,
+  onFeedbackUpdate
+}) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+
   const poseRef = useRef(null);
   const handRef = useRef(null);
+  const wsRef = useRef(null);
 
   const previousPoseRef = useRef(null);
   const previousHandsRef = useRef(null);
-
   const lastFrameTimeRef = useRef(0);
 
-  const SMOOTHING = 0.5;
-  const FPS_LIMIT = 30; // 🔥 important
+  const SMOOTHING = 0.6;
+  const FPS_LIMIT = 25;
 
+  // 🔥 THIS IS WHERE YOUR CODE GOES
   useEffect(() => {
     let animationFrameId;
 
     const init = async () => {
-      console.log("Loading models...");
-
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
       );
 
-      // 🔥 Use lite model for speed
       poseRef.current = await PoseLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath:
@@ -41,7 +67,6 @@ export default function SkeletonCanvas() {
         numPoses: 1
       });
 
-      // 🔥 OPTIONAL: comment this if slow
       handRef.current = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath:
@@ -51,23 +76,29 @@ export default function SkeletonCanvas() {
         numHands: 2
       });
 
-      console.log("Models loaded");
+      const token = localStorage.getItem("token");
+
+      wsRef.current = new WebSocket(
+        `ws://127.0.0.1:8000/ws/train?token=${token}`
+      );
+
+      wsRef.current.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        onAccuracyUpdate(data.accuracy);
+        onFeedbackUpdate(data.feedback.join(", "));
+      };
 
       startCamera();
     };
 
     const startCamera = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: 640,
-          height: 480
-        }
+        video: { width: 640, height: 480 }
       });
 
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
 
-      // ✅ FIXED CANVAS SIZE (DO NOT CHANGE EVERY FRAME)
       canvasRef.current.width = 640;
       canvasRef.current.height = 480;
 
@@ -87,7 +118,6 @@ export default function SkeletonCanvas() {
     const detect = () => {
       const now = performance.now();
 
-      // 🔥 FPS CONTROL
       if (now - lastFrameTimeRef.current < 1000 / FPS_LIMIT) {
         animationFrameId = requestAnimationFrame(detect);
         return;
@@ -99,16 +129,11 @@ export default function SkeletonCanvas() {
       let handLandmarksList = null;
 
       if (poseRef.current) {
-        const poseResult = poseRef.current.detectForVideo(
-          videoRef.current,
-          now
-        );
+        const result = poseRef.current.detectForVideo(videoRef.current, now);
 
-        if (poseResult.landmarks.length > 0) {
-          poseLandmarks = poseResult.landmarks[0];
-
+        if (result.landmarks.length > 0) {
           poseLandmarks = smoothLandmarks(
-            poseLandmarks,
+            result.landmarks[0],
             previousPoseRef.current
           );
 
@@ -116,20 +141,14 @@ export default function SkeletonCanvas() {
         }
       }
 
-      // 🔥 RUN HANDS LESS FREQUENTLY
-      if (handRef.current && Math.random() > 0.5) {
-        const handResult = handRef.current.detectForVideo(
-          videoRef.current,
-          now
-        );
+      if (handRef.current && Math.random() > 0.6) {
+        const result = handRef.current.detectForVideo(videoRef.current, now);
 
-        if (handResult.landmarks.length > 0) {
-          handLandmarksList = handResult.landmarks.map((hand, index) =>
+        if (result.landmarks.length > 0) {
+          handLandmarksList = result.landmarks.map((hand, index) =>
             smoothLandmarks(
               hand,
-              previousHandsRef.current
-                ? previousHandsRef.current[index]
-                : null
+              previousHandsRef.current?.[index]
             )
           );
 
@@ -138,11 +157,36 @@ export default function SkeletonCanvas() {
       }
 
       if (poseLandmarks) {
-        drawSkeleton(
-          canvasRef.current,
-          poseLandmarks,
-          handLandmarksList
-        );
+        drawSkeleton(canvasRef.current, poseLandmarks, handLandmarksList);
+
+        let anglesPayload = {};
+
+        requiredParts?.forEach(part => {
+          const mapping = BODY_PART_MAP[part.body_part];
+
+          if (mapping) {
+            const [a, b, c] = mapping;
+
+            const angle = calculateAngle(
+              poseLandmarks[a],
+              poseLandmarks[b],
+              poseLandmarks[c]
+            );
+
+            anglesPayload[part.body_part] = angle;
+          }
+        });
+
+        onAngleUpdate(anglesPayload);
+
+        if (wsRef.current?.readyState === 1 && currentStepId) {
+          wsRef.current.send(
+            JSON.stringify({
+              step_id: currentStepId,
+              angles: anglesPayload
+            })
+          );
+        }
       }
 
       animationFrameId = requestAnimationFrame(detect);
@@ -150,25 +194,19 @@ export default function SkeletonCanvas() {
 
     init();
 
-    return () => cancelAnimationFrame(animationFrameId);
-  }, []);
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      wsRef.current?.close();
+    };
+  }, [currentStepId, requiredParts]);
 
   return (
     <div style={{ width: "60%" }}>
       <canvas
         ref={canvasRef}
-        style={{
-          width: "100%",
-          height: "auto",
-          background: "#945858" // 🔥 better contrast
-        }}
+        style={{ width: "100%", background: "#111" }}
       />
-      <video
-        ref={videoRef}
-        style={{ display: "none" }}
-        autoPlay
-        muted
-      />
+      <video ref={videoRef} style={{ display: "none" }} autoPlay muted />
     </div>
   );
 }
