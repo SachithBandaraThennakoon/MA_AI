@@ -15,6 +15,29 @@ export default function Training() {
   const [accuracy, setAccuracy] = useState(0);
   const [feedback, setFeedback] = useState("");
 
+  const sendToCoach = async () => {
+  const res = await fetch("http://localhost:3001/feedback", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      angles: currentAngles,
+      step: currentStep
+    })
+  });
+
+  const data = await res.json();
+  speak(data.message);
+};
+
+function speak(text) {
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  speechSynthesis.speak(utterance);
+}
+
   
 
   // -----------------------------
