@@ -92,18 +92,26 @@ export default function SkeletonCanvas({
     };
 
     const startCamera = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 }
-      });
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: 640, height: 480 }
+  });
 
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
+  videoRef.current.srcObject = stream;
 
-      canvasRef.current.width = 640;
-      canvasRef.current.height = 480;
-
-      detect();
+  await new Promise((resolve) => {
+    videoRef.current.onloadedmetadata = () => {
+      resolve();
     };
+  });
+
+  await videoRef.current.play();
+
+  // ✅ NOW SAFE
+  canvasRef.current.width = videoRef.current.videoWidth;
+  canvasRef.current.height = videoRef.current.videoHeight;
+
+  detect();
+};
 
     const smoothLandmarks = (current, previous) => {
       if (!previous) return current;
@@ -118,6 +126,15 @@ export default function SkeletonCanvas({
     const detect = () => {
       const now = performance.now();
 
+      if (
+  !videoRef.current ||
+  videoRef.current.videoWidth === 0 ||
+  videoRef.current.videoHeight === 0
+) {
+  animationFrameId = requestAnimationFrame(detect);
+  return;
+}
+
       if (now - lastFrameTimeRef.current < 1000 / FPS_LIMIT) {
         animationFrameId = requestAnimationFrame(detect);
         return;
@@ -129,6 +146,7 @@ export default function SkeletonCanvas({
       let handLandmarksList = null;
 
       if (poseRef.current) {
+        
         const result = poseRef.current.detectForVideo(videoRef.current, now);
 
         if (result.landmarks.length > 0) {
@@ -204,7 +222,7 @@ export default function SkeletonCanvas({
     <div style={{ width: "60%" }}>
       <canvas
         ref={canvasRef}
-        style={{ width: "100%", background: "#111" }}
+        style={{ width: "100%", background: "#533f3f" }}
       />
       <video ref={videoRef} style={{ display: "none" }} autoPlay muted />
     </div>

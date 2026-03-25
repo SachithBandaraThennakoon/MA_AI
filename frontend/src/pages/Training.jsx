@@ -15,6 +15,8 @@ export default function Training() {
   const [accuracy, setAccuracy] = useState(0);
   const [feedback, setFeedback] = useState("");
 
+  
+
   // -----------------------------
   // Load techniques
   // -----------------------------
