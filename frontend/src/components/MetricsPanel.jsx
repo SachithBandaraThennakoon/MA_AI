@@ -1,6 +1,7 @@
 export default function MetricsPanel({
   steps,
   currentStepIndex,
+  setCurrentStepIndex,
   accuracy,
   angles,
   requiredParts,
@@ -89,9 +90,11 @@ export default function MetricsPanel({
         {steps.map((step, index) => (
           <div
             key={step.id}
+            onClick={() => setCurrentStepIndex(index)}   // 🔥 CLICK HANDLER
             style={{
               ...styles.stepItem,
-              ...(index === currentStepIndex && styles.stepActive)
+              ...(index === currentStepIndex && styles.stepActive),
+              cursor: "pointer"   // 🔥 UX improvement
             }}
           >
             {step.step_name}
@@ -101,21 +104,21 @@ export default function MetricsPanel({
 
       {/* AI FEEDBACK */}
       {feedback && feedback.trim() !== "" ? (
-  <ul style={styles.feedbackList}>
-    {feedback
-      .split("-")
-      .filter(item => item.trim() !== "")
-      .map((item, index) => (
-        <li key={index} style={styles.feedbackItem}>
-          {item.trim()}
-        </li>
-      ))}
-  </ul>
-) : (
-  <p style={{ color: "#777" }}>
-    Waiting for AI feedback...
-  </p>
-)}
+        <ul style={styles.feedbackList}>
+          {feedback
+            .split("-")
+            .filter(item => item.trim() !== "")
+            .map((item, index) => (
+              <li key={index} style={styles.feedbackItem}>
+                {item.trim()}
+              </li>
+            ))}
+        </ul>
+      ) : (
+        <p style={{ color: "#777" }}>
+          Waiting for AI feedback...
+        </p>
+      )}
 
     </div>
   );
@@ -148,7 +151,9 @@ const styles = {
   },
 
   section: {
-    marginBottom: "20px"
+    marginBottom: "20px",
+    paddingBottom: "10px",
+    borderBottom: "1px solid #222"
   },
 
   highlight: {
@@ -174,8 +179,8 @@ const styles = {
   },
 
   stepItem: {
-    padding: "10px",
-    margin: "6px 0",
+    padding: "12px",
+    margin: "12px 0",
     borderRadius: "8px",
     background: "#2a2d35",
     transition: "0.3s"
@@ -198,14 +203,14 @@ const styles = {
   },
 
   feedbackList: {
-  paddingLeft: "20px",
-  margin: 0
-},
+    paddingLeft: "20px",
+    margin: 0
+  },
 
-feedbackItem: {
-  marginBottom: "8px",
-  lineHeight: "1.5"
-},
+  feedbackItem: {
+    marginBottom: "8px",
+    lineHeight: "1.5"
+  },
 
   feedbackText: {
     color: "#00ff88",

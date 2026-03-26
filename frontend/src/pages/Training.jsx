@@ -124,6 +124,7 @@ function speak(text) {
         <MetricsPanel
           steps={steps}
           currentStepIndex={currentStepIndex}
+          setCurrentStepIndex={setCurrentStepIndex}
           accuracy={accuracy}
           angles={angles}
           requiredParts={requiredParts}
