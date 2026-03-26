@@ -12,13 +12,14 @@ from database import engine, Base, SessionLocal
 
 # Models
 from models import user, technique, technique_step, target_angle
+from models.target_angle import TargetAngle
 
 # Routers
 from routers import auth
 from routers import technique as technique_router
 
-# Services
-from services.angle_service import compare_angles
+# Agents 🔥
+from agents.orchestrator import run_agents
 
 # Security
 from utils.security import SECRET_KEY, ALGORITHM
@@ -29,12 +30,11 @@ from utils.security import SECRET_KEY, ALGORITHM
 # -----------------------------
 app = FastAPI(title="AI Martial Platform")
 
-# Create DB tables
 Base.metadata.create_all(bind=engine)
 
 
 # -----------------------------
-# CORS (Frontend Connection)
+# CORS
 # -----------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -74,7 +74,7 @@ def get_db():
 # -----------------------------
 @app.get("/")
 def root():
-    return {"message": "AI Martial Platform Running"}
+    return {"message": "AI Martial Platform Running 🚀"}
 
 
 # -----------------------------
@@ -91,49 +91,8 @@ def protected_route(token: str = Depends(oauth2_scheme)):
 
 
 # -----------------------------
-# WEBSOCKET (JWT PROTECTED)
+# GET ANGLES FOR STEP
 # -----------------------------
-@app.websocket("/ws/train")
-async def train(websocket: WebSocket):
-    token = websocket.query_params.get("token")
-
-    # ❌ No token → reject
-    if not token:
-        await websocket.close()
-        return
-
-    # 🔐 Verify JWT
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
-    except JWTError:
-        await websocket.close()
-        return
-
-    await websocket.accept()
-
-    db = SessionLocal()
-
-    try:
-        while True:
-            data = await websocket.receive_text()
-            parsed = json.loads(data)
-
-            step_id = parsed.get("step_id")
-            live_angles = parsed.get("angles", {})
-
-            # 🧠 Compare angles
-            result = compare_angles(db, step_id, live_angles)
-
-            await websocket.send_text(json.dumps(result))
-
-    except WebSocketDisconnect:
-        print(f"{email} disconnected")
-    finally:
-        db.close()
-
-from models.target_angle import TargetAngle
-
 @app.get("/steps/{step_id}/angles")
 def get_angles(step_id: int, db: Session = Depends(get_db)):
     angles = db.query(TargetAngle).filter(
@@ -148,3 +107,74 @@ def get_angles(step_id: int, db: Session = Depends(get_db)):
         }
         for a in angles
     ]
+
+
+# -----------------------------
+# WEBSOCKET (AGENT ENABLED)
+# -----------------------------
+@app.websocket("/ws/train")
+async def train(websocket: WebSocket):
+
+    await websocket.accept()  # ✅ ALWAYS FIRST
+
+    token = websocket.query_params.get("token")
+
+    if not token:
+        await websocket.close()
+        return
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+    except Exception as e:
+        print("JWT ERROR:", e)
+        await websocket.close()
+        return
+
+    db = SessionLocal()
+
+    try:
+        while True:
+            try:
+                data = await websocket.receive_text()
+            except:
+                break  # 🔥 client disconnected safely
+
+            parsed = json.loads(data)
+
+            step_id = parsed.get("step_id")
+            live_angles = parsed.get("angles", {})
+
+            db_angles = db.query(TargetAngle).filter(
+                TargetAngle.step_id == step_id
+            ).all()
+
+            targets = [
+                {
+                    "body_part": a.body_part,
+                    "min": a.min_angle,
+                    "max": a.max_angle
+                }
+                for a in db_angles
+            ]
+
+            agent_result = run_agents(live_angles, targets)
+
+            correct = sum(
+                1 for a in agent_result["analysis"] if a["status"] == "good"
+            )
+            total = len(agent_result["analysis"]) or 1
+            accuracy = int((correct / total) * 100)
+
+            try:
+                await websocket.send_text(json.dumps({
+                    "accuracy": accuracy,
+                    "feedback": agent_result["feedback"],
+                    "analysis": agent_result["analysis"],
+                    "audio": agent_result["audio"]
+                }))
+            except:
+                break  # 🔥 prevent crash
+
+    finally:
+        db.close()

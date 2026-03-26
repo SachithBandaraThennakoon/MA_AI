@@ -110,7 +110,28 @@ export default function MetricsPanel({
 
       <hr />
 
-      <h4>Feedback</h4>
+      <h4>AI Coaching Feedback</h4>
+
+<div
+  style={{
+    marginTop: "10px",
+    padding: "12px",
+    borderRadius: "8px",
+    background: "#111",
+    border: "1px solid #333",
+    minHeight: "60px"
+  }}
+>
+  {feedback && feedback.trim() !== "" ? (
+    <p style={{ color: "#00ff88", fontWeight: "500" }}>
+      {feedback}
+    </p>
+  ) : (
+    <p style={{ color: "#888" }}>
+      Waiting for AI feedback...
+    </p>
+  )}
+</div>
       <p>{feedback}</p>
     </div>
   );

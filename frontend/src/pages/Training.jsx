@@ -38,6 +38,7 @@ function speak(text) {
   speechSynthesis.speak(utterance);
 }
 
+
   
 
   // -----------------------------

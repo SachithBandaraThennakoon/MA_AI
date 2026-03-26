@@ -7,7 +7,7 @@ import {
 
 import { drawSkeleton } from "../utils/drawSkeleton";
 
-// BODY PART MAP
+// BODY MAP
 const BODY_PART_MAP = {
   knee_right: [24, 26, 28],
   knee_left: [23, 25, 27],
@@ -22,7 +22,7 @@ function calculateAngle(a, b, c) {
     Math.atan2(c.y - b.y, c.x - b.x) -
     Math.atan2(a.y - b.y, a.x - b.x);
 
-  let angle = Math.abs((radians * 180.0) / Math.PI);
+  let angle = Math.abs((radians * 180) / Math.PI);
   if (angle > 180) angle = 360 - angle;
 
   return angle;
@@ -49,7 +49,55 @@ export default function SkeletonCanvas({
   const SMOOTHING = 0.6;
   const FPS_LIMIT = 25;
 
-  // 🔥 THIS IS WHERE YOUR CODE GOES
+  let lastSpoken = 0;
+
+  const playAudio = (base64Audio) => {
+    if (!base64Audio) return;
+
+    if (Date.now() - lastSpoken < 3000) return;
+
+    const audio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
+    audio.play();
+
+    lastSpoken = Date.now();
+  };
+
+  // ✅ WebSocket (ONLY ONCE)
+  useEffect(() => {
+    if (wsRef.current) return;
+
+    const token = localStorage.getItem("token");
+
+    wsRef.current = new WebSocket(
+      `ws://127.0.0.1:8000/ws/train?token=${token}`
+    );
+
+    wsRef.current.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        const feedbackText = Array.isArray(data.feedback)
+          ? data.feedback[0]
+          : data.feedback;
+
+        onAccuracyUpdate(data.accuracy);
+        onFeedbackUpdate(feedbackText);
+
+        if (data.audio) {
+          playAudio(data.audio);
+        }
+
+      } catch (err) {
+        console.error("WS error:", err);
+      }
+    };
+
+    return () => {
+      wsRef.current?.close();
+    };
+  }, []);
+
+  // ✅ MediaPipe + Detection
   useEffect(() => {
     let animationFrameId;
 
@@ -76,42 +124,27 @@ export default function SkeletonCanvas({
         numHands: 2
       });
 
-      const token = localStorage.getItem("token");
-
-      wsRef.current = new WebSocket(
-        `ws://127.0.0.1:8000/ws/train?token=${token}`
-      );
-
-      wsRef.current.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        onAccuracyUpdate(data.accuracy);
-        onFeedbackUpdate(data.feedback.join(", "));
-      };
-
       startCamera();
     };
 
     const startCamera = async () => {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: 640, height: 480 }
-  });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 }
+      });
 
-  videoRef.current.srcObject = stream;
+      videoRef.current.srcObject = stream;
 
-  await new Promise((resolve) => {
-    videoRef.current.onloadedmetadata = () => {
-      resolve();
+      await new Promise((resolve) => {
+        videoRef.current.onloadedmetadata = resolve;
+      });
+
+      await videoRef.current.play();
+
+      canvasRef.current.width = videoRef.current.videoWidth;
+      canvasRef.current.height = videoRef.current.videoHeight;
+
+      detect();
     };
-  });
-
-  await videoRef.current.play();
-
-  // ✅ NOW SAFE
-  canvasRef.current.width = videoRef.current.videoWidth;
-  canvasRef.current.height = videoRef.current.videoHeight;
-
-  detect();
-};
 
     const smoothLandmarks = (current, previous) => {
       if (!previous) return current;
@@ -127,13 +160,12 @@ export default function SkeletonCanvas({
       const now = performance.now();
 
       if (
-  !videoRef.current ||
-  videoRef.current.videoWidth === 0 ||
-  videoRef.current.videoHeight === 0
-) {
-  animationFrameId = requestAnimationFrame(detect);
-  return;
-}
+        !videoRef.current ||
+        videoRef.current.videoWidth === 0
+      ) {
+        animationFrameId = requestAnimationFrame(detect);
+        return;
+      }
 
       if (now - lastFrameTimeRef.current < 1000 / FPS_LIMIT) {
         animationFrameId = requestAnimationFrame(detect);
@@ -145,8 +177,7 @@ export default function SkeletonCanvas({
       let poseLandmarks = null;
       let handLandmarksList = null;
 
-      if (poseRef.current) {
-        
+      try {
         const result = poseRef.current.detectForVideo(videoRef.current, now);
 
         if (result.landmarks.length > 0) {
@@ -157,22 +188,7 @@ export default function SkeletonCanvas({
 
           previousPoseRef.current = poseLandmarks;
         }
-      }
-
-      if (handRef.current && Math.random() > 0.6) {
-        const result = handRef.current.detectForVideo(videoRef.current, now);
-
-        if (result.landmarks.length > 0) {
-          handLandmarksList = result.landmarks.map((hand, index) =>
-            smoothLandmarks(
-              hand,
-              previousHandsRef.current?.[index]
-            )
-          );
-
-          previousHandsRef.current = handLandmarksList;
-        }
-      }
+      } catch (e) {}
 
       if (poseLandmarks) {
         drawSkeleton(canvasRef.current, poseLandmarks, handLandmarksList);
@@ -180,10 +196,10 @@ export default function SkeletonCanvas({
         let anglesPayload = {};
 
         requiredParts?.forEach(part => {
-          const mapping = BODY_PART_MAP[part.body_part];
+          const map = BODY_PART_MAP[part.body_part];
 
-          if (mapping) {
-            const [a, b, c] = mapping;
+          if (map) {
+            const [a, b, c] = map;
 
             const angle = calculateAngle(
               poseLandmarks[a],
@@ -198,12 +214,10 @@ export default function SkeletonCanvas({
         onAngleUpdate(anglesPayload);
 
         if (wsRef.current?.readyState === 1 && currentStepId) {
-          wsRef.current.send(
-            JSON.stringify({
-              step_id: currentStepId,
-              angles: anglesPayload
-            })
-          );
+          wsRef.current.send(JSON.stringify({
+            step_id: currentStepId,
+            angles: anglesPayload
+          }));
         }
       }
 
@@ -212,18 +226,13 @@ export default function SkeletonCanvas({
 
     init();
 
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-      wsRef.current?.close();
-    };
+    return () => cancelAnimationFrame(animationFrameId);
+
   }, [currentStepId, requiredParts]);
 
   return (
     <div style={{ width: "60%" }}>
-      <canvas
-        ref={canvasRef}
-        style={{ width: "100%", background: "#533f3f" }}
-      />
+      <canvas ref={canvasRef} style={{ width: "100%", background: "#111" }} />
       <video ref={videoRef} style={{ display: "none" }} autoPlay muted />
     </div>
   );
