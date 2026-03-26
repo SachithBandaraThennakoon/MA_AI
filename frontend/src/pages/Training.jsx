@@ -38,7 +38,6 @@ function speak(text) {
   speechSynthesis.speak(utterance);
 }
 
-
   
 
   // -----------------------------
@@ -89,16 +88,16 @@ function speak(text) {
 
       {/* TOP BAR */}
       <div style={{
-        background: "#111",
+        background: "#351111",
         color: "white",
         padding: "10px",
         textAlign: "center"
       }}>
-        {feedback || "Start Training"}
+
       </div>
 
       {/* TECHNIQUE SELECT */}
-      <div style={{ textAlign: "center", margin: "10px" }}>
+      <div style={{ textAlign: "left", margin: "20px", padding: "0 50px" }}>
         <select
           onChange={(e) => setSelectedTechnique(Number(e.target.value))}
         >

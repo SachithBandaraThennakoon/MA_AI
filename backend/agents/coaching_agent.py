@@ -1,32 +1,38 @@
-import os
 from openai import OpenAI
-from dotenv import load_dotenv
+from utils.config import OPENAI_API_KEY
 
-load_dotenv()
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def generate_feedback(analysis):
     prompt = f"""
 You are a martial arts coach.
 
-Analyze this movement data and give short coaching advice:
+Based on the movement analysis below, give short and clear coaching feedback.
 
+Analysis:
 {analysis}
 
-Give:
-- Clear corrections
-- Simple language
-- Max 1 sentences
-- Max 7 words per sentence
+Rules:
+- Be concise
+- Give actionable advice
+- Mention body parts
+- Encourage improvement
+- Focus on the most critical issues
+- max 8 words per feedback point
+- Provide 3 feedback points at most with good and bad points
+- list feedback points with emojis (e.g. "👊", "🦵", "💪")
+- bulet point format
+- each point add new line
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a professional martial arts coach."},
+            {"role": "system", "content": "You are an expert martial arts coach."},
             {"role": "user", "content": prompt}
-        ]
+        ],
+        temperature=0.5
     )
 
     return response.choices[0].message.content

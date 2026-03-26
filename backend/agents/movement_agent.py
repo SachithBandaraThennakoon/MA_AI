@@ -1,29 +1,38 @@
-def analyze_movement(angles, targets):
-    results = []
+def analyze_movement(required_parts, live_angles):
+    analysis = []
 
-    for part in targets:
-        name = part["body_part"]
-        value = angles.get(name)
+    for part in required_parts:
+        body = part.body_part
+        min_a = part.min_angle
+        max_a = part.max_angle
+
+        value = live_angles.get(body)
 
         if value is None:
             continue
 
-        min_val = part["min"]
-        max_val = part["max"]
+        if value < min_a:
+            analysis.append({
+                "body_part": body,
+                "issue": "too_low",
+                "value": value,
+                "target": (min_a, max_a)
+            })
 
-        if value < min_val:
-            status = "low"
-        elif value > max_val:
-            status = "high"
+        elif value > max_a:
+            analysis.append({
+                "body_part": body,
+                "issue": "too_high",
+                "value": value,
+                "target": (min_a, max_a)
+            })
+
         else:
-            status = "good"
+            analysis.append({
+                "body_part": body,
+                "issue": "good",
+                "value": value,
+                "target": (min_a, max_a)
+            })
 
-        results.append({
-            "body_part": name,
-            "value": value,
-            "min": min_val,
-            "max": max_val,
-            "status": status
-        })
-
-    return results
+    return analysis
